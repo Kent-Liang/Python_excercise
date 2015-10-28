@@ -9,26 +9,30 @@
 
 import argparse
 from socket import *
+from threading import *
+screenLock = Semaphore(value=1)
 
-target_hosts = []
-target_ports = []
-def initialize():
-    '''Set up the parser and read from stdin return none'''
-    global target_hosts, target_ports
+def main():
     #init the parser
     parser = argparse.ArgumentParser(description="Scanning the availablity of port(s) in hostname(s)")
-    #taking the argument(s)
+    #taking the arguments
     parser.add_argument("H", nargs='+', help="Target Hostname(s)")
     parser.add_argument("-p", "--portnumber", nargs='+', help="Target Port Number(s)")
     #parsing the arguments
     args = parser.parse_args()
     #initialize target hostname and target port number(s)
     target_hosts = args.H
+    target_ports = []
     if args.portnumber:
         target_ports = [map(int, port.split(",")) for port in args.portnumber]
     #if the target port isn't specify, then assume all ports.
     if len(target_hosts) > len(target_ports):
         [target_ports.append(range(0,65535)) for i in range(len(target_hosts) - len(target_ports))]
+    #validate input    
+    validate_inputs(target_hosts, target_ports)
+    #port scan
+    for i in range(len(target_hosts)):
+        portScan(target_hosts[i], target_ports[i])
 
 def validate_inputs(target_hosts, target_ports):
     '''Validate the input hosts and ports return none'''
@@ -44,20 +48,44 @@ def validate_inputs(target_hosts, target_ports):
     #validate the input port(s)
     for ports in target_ports:
         for port in ports:
-            print port
             if port not in range(0,65535): 
                 raise ValueError, "%d not a valid port. Port number has to be between 0-65535" %port
             
 def connect(hostname, port):
+    '''make a connection to the host by the specified port'''
     try:
         conn_sock = socket(AF_INET, SOCK_STREAM)
         conn_sock.connect((hostname, port))
-        print "%d  TCP port open" % port
+        conn_sock.send('Hello world!\r\n')
+        results =  conn_sock.recv(100)
+        screenLock.acquire()        
+        print "%d  TCP port open" %port
         connSkt.close()
     except:
-        print "%d TCP port closed" % port
+        screenLock.acquire()
+        print "%d TCP port closed" %port
+    finally:
+        screenLock.release()
+        conn_sock.close()
+
+def portScan(hostname, ports):
+    '''perform port scanning'''
+    try:
+        hostIP = gethostbyname(hostname)
+    except:
+        print "Unknown host"%hostname
+        return
+    try:
+        name = gethostbyaddr(hostIP)
+        print '\n Scan Results for: ' + name[0]
+    except:
+        print '\n Scan Results for: ' + hostIP
+        setdefaulttimeout(1)
+        #threading
+        for port in ports:
+            t = Thread(target=connect, args=(hostname, int(port)))
+            t.start()
     
 
 if __name__ == "__main__":
-    initialize()
-    validate_inputs(target_hosts, target_ports)
+    main()
